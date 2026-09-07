@@ -24,6 +24,15 @@ const PLACES = {
     { name: 'Дворцовая площадь', desc: 'у Эрмитажа', dist: '0.8 км', eta: '10 мин', emoji: '🏰', x: 0.5, y: 0.5 },
     { name: 'Петропавловская крепость', desc: 'у входа', dist: '2.2 км', eta: '18 мин', emoji: '🛡', x: 0.6, y: 0.3 },
   ],
+  'Казань': [
+    { name: 'Казанский Кремль', desc: 'главный вход', dist: '1.5 км', eta: '12 мин', emoji: '🏰', x: 0.5, y: 0.5 },
+  ],
+  'Екатеринбург': [
+    { name: 'Исторический сквер', desc: 'центр', dist: '2 км', eta: '16 мин', emoji: '🏛', x: 0.5, y: 0.5 },
+  ],
+  'Новосибирск': [
+    { name: 'Площадь Ленина', desc: 'у театра', dist: '1.8 км', eta: '14 мин', emoji: '🎭', x: 0.5, y: 0.5 },
+  ],
 };
 
 // ============ SAVE/LOAD SYSTEM ============
@@ -52,16 +61,18 @@ function loadGame() {
 }
 
 function resetGame() {
-  localStorage.removeItem('perecupSave');
-  gameState.balance = 5000;
-  gameState.city = 'Москва';
-  gameState.inventory = [];
-  gameState.listings = [];
-  gameState.userListings = [];
-  gameState.achievements = [];
-  gameState.cards = [];
-  gameState.activeCard = null;
-  location.reload();
+  if (confirm('Вы уверены? Все данные будут удалены и игра вернется к начальному состоянию.')) {
+    localStorage.removeItem('perecupSave');
+    gameState.balance = 5000;
+    gameState.city = 'Москва';
+    gameState.inventory = [];
+    gameState.listings = [];
+    gameState.userListings = [];
+    gameState.achievements = [];
+    gameState.cards = [];
+    gameState.activeCard = null;
+    location.reload();
+  }
 }
 
 // ============ ITEM SYSTEM ============
@@ -111,7 +122,7 @@ function generateItem(type, isReplica = false, condition = null) {
     condition: cond,
     isReplica,
     hiddenDefect,
-    visible: false, // not yet inspected by player
+    visible: false,
     sellerId: null,
   };
 }
@@ -121,27 +132,22 @@ function generateItem(type, isReplica = false, condition = null) {
 function generateListings() {
   gameState.listings = [];
   
-  // Phone listings
   for (let i = 0; i < 5; i++) {
     gameState.listings.push(generateItem('phone', Math.random() < 0.4, CONDITIONS[Math.floor(Math.random() * 3)]));
   }
   
-  // Charger listings
   for (let i = 0; i < 4; i++) {
     gameState.listings.push(generateItem('charger', Math.random() < 0.3));
   }
   
-  // Headphones listings
   for (let i = 0; i < 4; i++) {
     gameState.listings.push(generateItem('headphones', Math.random() < 0.5));
   }
   
-  // Car listings
   for (let i = 0; i < 3; i++) {
     gameState.listings.push(generateItem('car'));
   }
   
-  // Clothes listings (proper amount of replicas)
   for (let i = 0; i < 6; i++) {
     gameState.listings.push(generateItem('clothes', Math.random() < 0.6));
   }
@@ -154,7 +160,6 @@ function buyItem(itemId, checkResult = null) {
   gameState.balance -= item.price;
   const inventoryItem = { ...item, ownedSince: Date.now() };
   
-  // If checked and issues found, player can request discount
   if (checkResult && checkResult.hasIssues) {
     // Discount logic would be here
   }
@@ -162,17 +167,18 @@ function buyItem(itemId, checkResult = null) {
   gameState.inventory.push(inventoryItem);
   gameState.listings = gameState.listings.filter(i => i.id !== itemId);
   saveGame();
+  updateBalance();
+  displayListings();
+  displayInventory();
   return true;
 }
 
 // ============ INSPECTION SYSTEM ============
 
 function inspectItem(item, type) {
-  // type: 'authenticity' or 'condition'
   let discovered = false;
   let result = { type, discovered, message: '' };
   
-  // Base 50% + skill bonus
   const chanceToDiscover = 0.5;
   
   if (type === 'authenticity' && ITEM_TYPES[item.type]?.hasOriginal) {
@@ -199,7 +205,6 @@ function inspectItem(item, type) {
 // ============ REPAIR SYSTEM ============
 
 function canRepair(item) {
-  // Cannot repair if it's misrepresented (replica sold as original)
   if (item.isReplica && !item.name.includes('реплика')) return false;
   return item.hiddenDefect && item.hiddenDefect !== 'Восстановленный';
 }
@@ -215,6 +220,9 @@ function repairItem(itemId) {
   item.hiddenDefect = null;
   item.condition = 'Хорошее';
   saveGame();
+  updateBalance();
+  displayInventory();
+  alert('✅ Товар отремонтирован!');
   return true;
 }
 
@@ -223,7 +231,6 @@ function repairItem(itemId) {
 function createListing(item, customSpecs = {}) {
   const listing = { ...item };
   
-  // Player can upgrade characteristics
   if (customSpecs.condition) {
     listing.condition = customSpecs.condition;
   }
@@ -231,7 +238,6 @@ function createListing(item, customSpecs = {}) {
     listing.isReplica = customSpecs.isReplica;
   }
   
-  // Check if player is lying (selling replica as original)
   listing.isLyingAboutOrigin = item.isReplica && !customSpecs.isReplica;
   
   listing.sellerId = gameState.playerName;
@@ -243,17 +249,13 @@ function createListing(item, customSpecs = {}) {
 // ============ DELIVERY SYSTEM ============
 
 function scheduleDelivery(item, seller, method) {
-  // method: 'delivery' or 'meetup'
-  
   if (method === 'delivery') {
-    // NPC automatically processes delivery
     return {
       status: 'delivering',
       date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
       address: 'ул. Примера, д. 1',
     };
   } else {
-    // Schedule meetup: date, time, place
     return {
       status: 'scheduled',
       date: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -269,7 +271,6 @@ function negotiatePrice(item, offerPrice) {
   const sellerMin = Math.floor(item.price * 0.7);
   const sellerMax = item.price;
   
-  // Fixed logic: seller won't loop at edge values
   if (offerPrice >= sellerMin && offerPrice <= sellerMax) {
     return { accepted: true, finalPrice: offerPrice };
   } else if (offerPrice < sellerMin) {
@@ -279,10 +280,9 @@ function negotiatePrice(item, offerPrice) {
   }
 }
 
-// ============ BUYER INSPECTION (when purchasing) ============
+// ============ BUYER INSPECTION ============
 
 function buyerInspectsItem(item) {
-  // NPC buyer checks: 80% chance to find defects
   const chanceToFind = 0.8;
   let foundIssues = [];
   
@@ -304,7 +304,6 @@ function buyerInspectsItem(item) {
 // ============ ROBBERY SYSTEM ============
 
 function handleRobbery() {
-  // 80% chance NPC finds issues, if caught: 15-40% robbery
   const robAmount = Math.floor(gameState.balance * (0.15 + Math.random() * 0.25));
   gameState.balance -= robAmount;
   saveGame();
@@ -340,17 +339,21 @@ function goToLock() {
   document.querySelector('.home-screen').classList.remove('active');
 }
 
-function unlockPhone() {
-  const code = document.querySelector('.lock-input').value;
-  if (code === '1234') {
-    document.querySelector('.lock-screen').classList.add('hidden');
-    document.querySelector('.home-screen').classList.add('active');
-  }
-}
-
 function openApp(appName) {
   document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
-  document.querySelector(`.overlay-${appName}`)?.classList.add('active');
+  const overlay = document.querySelector(`.overlay-${appName}`);
+  if (overlay) {
+    overlay.classList.add('active');
+    if (appName === 'a8ito') {
+      displayListings();
+    } else if (appName === 'backpack') {
+      displayInventory();
+    } else if (appName === 'bank') {
+      displayBankCards();
+    } else if (appName === 'settings') {
+      updateSettingsDisplay();
+    }
+  }
 }
 
 function closeApp() {
@@ -358,7 +361,8 @@ function closeApp() {
 }
 
 function updateBalance() {
-  document.querySelectorAll('.balance-value').forEach(el => {
+  const balanceElements = document.querySelectorAll('.balance-value');
+  balanceElements.forEach(el => {
     el.textContent = gameState.balance.toLocaleString() + ' ₽';
   });
 }
@@ -400,12 +404,12 @@ function displayListings() {
   if (!container) return;
   
   container.innerHTML = gameState.listings.map(item => `
-    <div class="a8-card" data-item-id="${item.id}">
+    <div class="a8-card" onclick="viewItem('${item.id}')">
       <div class="a8-card-image">${item.emoji}</div>
       <div class="a8-card-title">${item.name}</div>
       <div class="a8-card-price">${item.price.toLocaleString()} ₽</div>
       <div class="a8-card-condition">${item.condition}</div>
-      <button class="a8-btn" onclick="viewItem('${item.id}')">Подробнее</button>
+      <button class="a8-btn" onclick="event.stopPropagation(); viewItem('${item.id}')">Подробнее</button>
     </div>
   `).join('');
 }
@@ -415,7 +419,6 @@ function viewItem(itemId) {
   if (!item) return;
   
   const modal = document.querySelector('.a8-modal');
-  if (!modal) return;
   
   modal.innerHTML = `
     <div class="a8-modal-content">
@@ -431,7 +434,7 @@ function viewItem(itemId) {
       </div>
       <div class="a8-modal-footer">
         ${gameState.balance >= item.price ? `
-          <button class="a8-btn-primary" onclick="buyItem('${item.id}')">Купить</button>
+          <button class="a8-btn-primary" onclick="buyItem('${item.id}'); closeModal(); displayListings();">Купить</button>
           <button class="a8-btn" onclick="inspectItemModal('${item.id}')">Проверить</button>
         ` : `<p style="color: red;">Недостаточно средств</p>`}
         <button class="a8-btn" onclick="closeModal()">Закрыть</button>
@@ -518,17 +521,17 @@ function displayInventory() {
   if (!container) return;
   
   if (gameState.inventory.length === 0) {
-    container.innerHTML = '<div class="bp-empty">Инвентарь пуст</div>';
+    container.innerHTML = '<div class="bp-empty" style="grid-column: 1/-1;">Инвентарь пуст</div>';
     return;
   }
   
   container.innerHTML = gameState.inventory.map(item => {
     const defectChip = item.hiddenDefect ? 
       `<span class="bp-defect-chip">${item.hiddenDefect}</span>` : 
-      `<span class="bp-defect-chip none">Нет дефектов</span>`;
+      `<span class="bp-defect-chip none">✓ OK</span>`;
     
     const repairBtn = canRepair(item) ? 
-      `<button class="bp-action-btn repair" onclick="repairItem('${item.id}')">🔧 Починить</button>` : '';
+      `<button class="a8-btn" onclick="repairItem('${item.id}')">🔧 Починить</button>` : '';
     
     return `
       <div class="bp-card" onclick="openInventoryItem('${item.id}')">
@@ -546,7 +549,6 @@ function openInventoryItem(itemId) {
   const item = gameState.inventory.find(i => i.id === itemId);
   if (!item) return;
   
-  // Show item details with repair option if available
   const modal = document.querySelector('.a8-modal');
   const repairBtn = canRepair(item) ? 
     `<button class="a8-btn-primary" onclick="repairItem('${item.id}')">Починить</button>` : '';
@@ -597,7 +599,11 @@ function displayBankCards() {
           </div>
         </div>
       </div>
-    `).join('');
+    `).join('') + `
+      <div style="width: 100%; text-align: center; margin-top: 20px;">
+        <button class="kb-btn" onclick="openCardForm()">+ Создать еще карту</button>
+      </div>
+    `;
   }
 }
 
@@ -612,26 +618,34 @@ function getDesignGradient(design) {
 }
 
 function openCardForm() {
-  const form = document.querySelector('.kb-form');
-  if (form) {
-    form.innerHTML = `
-      <label class="kb-label">Имя на карте</label>
-      <input type="text" class="kb-input" id="cardName" placeholder="Ваше имя" value="${gameState.playerName}">
-      
-      <label class="kb-label">Дата рождения</label>
-      <input type="text" class="kb-input" id="cardBirth" placeholder="ДД.МММ.ГГГГ" maxlength="10" oninput="formatDateBirth(this)">
-      
-      <label class="kb-label">Выберите дизайн</label>
-      <div class="kb-designs">
-        <div class="kb-design-swatch kb-d-midnight" onclick="selectCardDesign('midnight')">Midnight</div>
-        <div class="kb-design-swatch kb-d-sunset" onclick="selectCardDesign('sunset')">Sunset</div>
-        <div class="kb-design-swatch kb-d-mint" onclick="selectCardDesign('mint')">Mint</div>
-        <div class="kb-design-swatch kb-d-amethyst" onclick="selectCardDesign('amethyst')">Amethyst</div>
+  const modal = document.querySelector('.a8-modal');
+  modal.innerHTML = `
+    <div class="a8-modal-content">
+      <div class="a8-modal-header">
+        <button class="a8-modal-close" onclick="closeModal()">✕</button>
       </div>
-      
-      <button class="kb-btn" onclick="submitCard()">Создать карту</button>
-    `;
-  }
+      <div class="a8-modal-body">
+        <div class="kb-form">
+          <label class="kb-label">Имя на карте</label>
+          <input type="text" class="kb-input" id="cardName" placeholder="Ваше имя" value="${gameState.playerName}">
+          
+          <label class="kb-label">Дата рождения</label>
+          <input type="text" class="kb-input" id="cardBirth" placeholder="ДД.МММ.ГГГГ" maxlength="10" oninput="formatDateBirth(this)">
+          
+          <label class="kb-label">Выберите дизайн</label>
+          <div class="kb-designs">
+            <div class="kb-design-swatch kb-d-midnight" onclick="selectCardDesign('midnight')">Midnight</div>
+            <div class="kb-design-swatch kb-d-sunset" onclick="selectCardDesign('sunset')">Sunset</div>
+            <div class="kb-design-swatch kb-d-mint" onclick="selectCardDesign('mint')">Mint</div>
+            <div class="kb-design-swatch kb-d-amethyst" onclick="selectCardDesign('amethyst')">Amethyst</div>
+          </div>
+          
+          <button class="kb-btn" onclick="submitCard()">Создать карту</button>
+        </div>
+      </div>
+    </div>
+  `;
+  modal.classList.add('open');
 }
 
 let selectedDesign = 'midnight';
@@ -652,23 +666,35 @@ function submitCard() {
   }
   
   createCard(selectedDesign, name);
+  closeModal();
   displayBankCards();
 }
 
 // ============ SETTINGS ============
+
+function updateSettingsDisplay() {
+  document.getElementById('playerName').textContent = gameState.playerName;
+  document.getElementById('playerBalance').textContent = gameState.balance.toLocaleString() + ' ₽';
+  
+  const themeSwitch = document.getElementById('themeSwitch');
+  if (gameState.theme === 'amoled') {
+    themeSwitch.classList.add('on');
+  } else {
+    themeSwitch.classList.remove('on');
+  }
+}
 
 function toggleTheme() {
   const newTheme = gameState.theme === 'classic' ? 'amoled' : 'classic';
   gameState.theme = newTheme;
   document.querySelector('.phone').classList.toggle('theme-amoled');
   localStorage.setItem('theme', newTheme);
+  updateSettingsDisplay();
   saveGame();
 }
 
 function openResetDialog() {
-  if (confirm('Вы уверены? Все данные будут удалены и игра вернется к начальному состоянию.')) {
-    resetGame();
-  }
+  resetGame();
 }
 
 // ============ MAP INTEGRATION ============
@@ -702,74 +728,73 @@ function selectPlace(idx) {
   const place = PLACES[gameState.city]?.[idx];
   if (!place) return;
   
-  // Show place detail modal
-  const modal = document.querySelector('#map-place-modal');
+  const modal = document.querySelector('#mapPlaceModal');
   if (!modal) return;
   
   modal.innerHTML = `
-    <div class="a8-filter-sheet">
-      <div class="map-sheet-handle-row">
-        <div class="a8-filter-handle"></div>
-      </div>
-      <div class="map-place-card">
-        <div class="map-place-card-top">
-          <div class="map-place-card-title">${place.name}</div>
-          <div class="map-place-card-close" onclick="closeMapPlace()">✕</div>
+    <div id="mapPlaceModal" class="map-place-modal" style="position:absolute; inset:0; z-index:60; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; opacity:1; pointer-events:auto;">
+      <div class="a8-filter-sheet">
+        <div class="map-sheet-handle-row">
+          <div class="a8-filter-handle"></div>
         </div>
-        <div class="map-place-card-desc">${place.desc}</div>
-        <div class="map-place-card-dist">📍 ${place.dist}</div>
-        <div class="map-place-card-actions">
-          <button class="map-place-card-walk-btn" onclick="walkToPlace()">
-            🚶 Пешком
-            <div class="walk-time">${place.eta}</div>
-          </button>
-          <button class="map-place-card-taxi-btn" onclick="orderTaxi()">🚕 Такси</button>
+        <div class="map-place-card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+            <div class="map-place-card-title">${place.name}</div>
+            <div class="map-place-card-close" onclick="closeMapPlace()">✕</div>
+          </div>
+          <div class="map-place-card-desc">${place.desc}</div>
+          <div class="map-place-card-dist">📍 ${place.dist}</div>
+          <div class="map-place-card-actions">
+            <button class="map-place-card-walk-btn" onclick="walkToPlace()">
+              🚶 Пешком
+              <div class="walk-time">${place.eta}</div>
+            </button>
+            <button class="map-place-card-taxi-btn" onclick="orderTaxi()">🚕 Такси</button>
+          </div>
         </div>
       </div>
     </div>
   `;
-  modal.classList.add('open');
+}
+
+function closeMapPlace() {
+  const modal = document.querySelector('#mapPlaceModal');
+  if (modal) modal.innerHTML = '';
 }
 
 function walkToPlace() {
-  // Simulate walk - after "arriving", show transaction sheet
+  alert('⏳ Вы идете на встречу...');
+  closeMapPlace();
+  setTimeout(() => {
+    showDealWindow();
+  }, 2000);
+}
+
+function orderTaxi() {
+  alert('🚕 Заказ такси...');
+  closeMapPlace();
   setTimeout(() => {
     showDealWindow();
   }, 3000);
 }
 
-function orderTaxi() {
-  // Show taxi class selector
-  alert('Выбор класса такси');
-}
-
 function showDealWindow() {
-  // Full-screen deal window when arrived at place
   const overlay = document.querySelector('.map-trip-overlay');
   if (!overlay) return;
   
   overlay.classList.add('on');
   overlay.innerHTML = `
     <div class="a8-deal-window">
-      <button class="a8-modal-close" onclick="closeDealWindow()" style="position: absolute; top: 10px; right: 10px; z-index: 100;">✕</button>
+      <div style="position:absolute; top:10px; right:10px; cursor:pointer; font-size:20px; z-index:100;" onclick="closeDealWindow()">✕</div>
       <div class="a8-deal-photo">📱</div>
-      <div class="a8-deal-seller">Продавец: Иван</div>
+      <div class="a8-deal-seller">Продавец: Иван К.</div>
       <div class="a8-deal-actions">
-        <button class="a8-btn-primary" onclick="openInspectionMenu()">Проверить товар</button>
-        <button class="a8-btn" onclick="buyWithoutCheck()">Купить без проверки</button>
+        <button class="a8-btn-primary" onclick="alert('Вы проверили товар')">Проверить товар</button>
+        <button class="a8-btn" onclick="alert('Вы купили товар!'); closeDealWindow();">Купить без проверки</button>
         <button class="a8-btn" onclick="closeDealWindow()">Отказаться</button>
       </div>
     </div>
   `;
-}
-
-function openInspectionMenu() {
-  alert('Выберите тип проверки:\n- Проверить оригинальность\n- Проверить состояние');
-}
-
-function buyWithoutCheck() {
-  alert('Товар куплен!');
-  closeDealWindow();
 }
 
 function closeDealWindow() {
@@ -781,37 +806,33 @@ function closeDealWindow() {
 window.addEventListener('load', () => {
   loadGame();
   
-  // Apply theme
   if (gameState.theme === 'amoled') {
     document.querySelector('.phone').classList.add('theme-amoled');
   }
   
-  // Generate initial listings
   if (gameState.listings.length === 0) {
     generateListings();
   }
   
-  // Update UI
   updateBalance();
   displayListings();
   displayInventory();
   displayBankCards();
   
-  // Lock screen city
   if (document.querySelector('.lock-city-btn .placeholder')) {
     document.querySelector('.lock-city-btn .placeholder').textContent = gameState.city;
   }
   
-  // City modal setup
   const cityList = document.querySelector('.lock-city-list');
   if (cityList) {
     cityList.innerHTML = CITIES.map(city => `
       <div class="lock-city-option ${city === gameState.city ? 'selected' : ''}" onclick="selectCity('${city}')">${city}</div>
     `).join('');
   }
+  
+  saveGame();
 });
 
-// Save game on page visibility change
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) saveGame();
 });
